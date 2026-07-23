@@ -64,9 +64,9 @@ def handle_yemot_request():
     """
     try:
         # 1. Get data from the request
-        form_data = request.form
-        user_text = form_data.get('text', '').strip()
-        caller_id = form_data.get('caller_id', 'default_user')
+        request_data = request.values
+        user_text = request_data.get('ApiSpeechText', request_data.get('text', '')).strip()
+        caller_id = request_data.get('ApiPhone', request_data.get('caller_id', 'default_user'))
 
         logging.info(f"Received request from caller {caller_id} with text: '{user_text}'")
 
