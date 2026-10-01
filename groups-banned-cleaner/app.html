@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head><meta charset="utf-8"><title>ניקוי חסומים ממרחבי צ'אט</title><link rel="stylesheet" href="app.css"></head>
+<body>
+<header><h1>🧹 ניקוי חסומים ממרחבי Google Chat</h1>
+<p>חסומים מ-Google Groups ← מסירים אותם מכל מרחבי הצ'אט שבהם אתה מנהל</p></header>
+
+<section>
+  <h2>0. המייל שלי (מוגן – לעולם לא יוסר)</h2>
+  <div class="row">
+    <select id="meSel" dir="ltr"></select>
+    <input id="me" type="email" dir="ltr" placeholder="your@email.com">
+    <button id="detect" class="ghost">🔍 זהה אוטומטית</button>
+  </div>
+  <label class="row"><input type="checkbox" id="meAuto"> זיהוי אוטומטי בכל פתיחה (מומלץ). בחירה או הקלדה ידנית מכבות אותו.</label>
+  <div class="muted" id="meInfo"></div>
+  <details><summary>כתובות מוגנות נוספות (אופציונלי)</summary>
+    <textarea id="extra" rows="2" dir="ltr" placeholder="alt@x.com, other@y.com"></textarea></details>
+  <small>כל הכתובות שזוהו + שהוזנו מוגנות: לא נשאבות לרשימת החסומים, לא נסרקות ולא יוסרו לעולם. התוסף עובד דרך האתר של Google Chat בחלון נפרד – צריך להיות מחובר שם. בלי מפתחות.</small>
+</section>
+
+<section>
+  <h2>1. החסומים (מ-Google Groups)</h2>
+  <p>פתח בטאב רגיל את עמוד <b>החסומים</b> בקבוצה שלך (Members ← Banned) ולחץ:</p>
+  <div class="row"><button id="scrape" class="primary">שאב חסומים מהטאב</button><span id="scrapeInfo" class="muted"></span></div>
+  <div id="verify"></div>
+  <details><summary>הוספה ידנית</summary>
+    <textarea id="manual" rows="3" dir="ltr" placeholder="a@x.com, b@y.com ..."></textarea>
+    <button id="addManual" class="ghost">הוסף</button></details>
+  <div class="row"><b id="bannedCount"></b>
+    <button id="bAll" class="ghost">בחר הכל</button><button id="bNone" class="ghost">נקה בחירה</button>
+    <button id="xlsBanned" class="ghost">⬇ ייצוא לאקסל</button>
+    <button id="bClear" class="ghost danger">אפס</button></div>
+  <div id="banned" class="chips"></div>
+</section>
+
+<section>
+  <h2>2. סריקת מרחבי הצ'אט שלי</h2>
+  <p class="muted">נפתח חלון עבודה של Google Chat. בכל מרחב התוסף בודק את כל החברים עד הסוף האמיתי של הרשימה – ובמרחבים גדולים מדביק כל כתובת חסומה בשדה החיפוש של החברים (מהיר ומדויק יותר מגלילה).</p>
+  <div class="row"><label>שיטת בדיקה: <select id="mode"><option value="auto">אוטומטי (מומלץ)</option><option value="search">הדבקת כל כתובת בכל מרחב</option><option value="full">קריאת רשימה מלאה בלבד</option></select></label></div>
+  <div class="row"><button id="scan" class="primary">סרוק מרחבי צ'אט</button>
+    <button id="stop" class="ghost danger" disabled>עצור</button><span id="scanInfo" class="muted"></span>
+    <button id="diag" class="ghost">🔧 אבחון</button><button id="copyLog" class="ghost">העתק יומן</button></div>
+  <div id="bar"><i></i></div>
+  <div id="stats" class="stats"></div>
+  <details><summary>כל המרחבים שזוהו (<span id="allCount">0</span>)</summary><div id="allSpaces"></div></details>
+</section>
+
+<section>
+  <h2>3. מרחבים עם חסומים – בחירה והסרה</h2>
+  <div class="row"><button id="gAll" class="ghost">בחר הכל</button><button id="gNone" class="ghost">נקה בחירה</button></div>
+  <table><thead><tr><th></th><th>מרחב</th><th>תפקיד שלי</th><th>חסומים שנמצאו בו</th><th>סטטוס</th></tr></thead><tbody id="groups"></tbody></table>
+  <div class="row"><button id="remove" class="danger big">הסר את המסומנים</button>
+    <span id="removeInfo"></span></div>
+  <div class="row"><button id="xlsReport" class="ghost">⬇ ייצוא דוח (מרחבים + הסרות) לאקסל</button></div>
+</section>
+
+<section><h2>יומן</h2><pre id="log"></pre></section>
+<script src="xlsx.min.js"></script>
+<script src="app.js"></script>
+</body></html>
