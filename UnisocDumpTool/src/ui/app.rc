@@ -1,0 +1,37 @@
+#include <windows.h>
+#include "resource.h"
+
+/* Enable Common Controls v6 (themed controls) and DPI awareness via manifest. */
+IDR_MANIFEST RT_MANIFEST "app.manifest"
+
+/* Optional application icon. A placeholder .ico can be dropped in as app.ico;
+ * the build tolerates its absence. */
+#if __has_include("app.ico")
+IDI_APPICON ICON "app.ico"
+#endif
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName",      "Unisoc Dump Tool"
+            VALUE "FileDescription",  "Unisoc Mocor RTOS Flash Dump Tool"
+            VALUE "FileVersion",      "1.0.0.0"
+            VALUE "ProductName",      "Unisoc Dump Tool"
+            VALUE "ProductVersion",   "1.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
