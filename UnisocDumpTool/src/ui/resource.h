@@ -14,6 +14,10 @@
 #define IDC_LIST_LOG      1006
 #define IDC_CHK_DETAILS   1007   /* "show technical details" toggle */
 #define IDC_BTN_SIM       1008   /* run a simulated dump (test mode) */
+#define IDC_BTN_FDL1      1009   /* choose FDL1 image (optional) */
+#define IDC_BTN_FDL2      1010   /* choose FDL2 image (optional) */
+#define IDC_BTN_FDLCLR    1011   /* clear chosen FDL images */
+#define IDC_PROMPT_EDIT   1050   /* edit control inside the address prompt */
 
 /* Custom window messages (worker thread -> UI thread). */
 #define WM_APP_LOG       (WM_APP + 1)   /* wParam=level, lParam=heap wchar_t* */

@@ -24,14 +24,22 @@
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "comdlg32.lib")
 
 #define WIN_W 920
-#define WIN_H 660
+#define WIN_H 720
 #define PAD   20
+
+/* Card heights, shared by the painter and the layout so they never drift. */
+#define TOP_H       56
+#define CARD_DEV_H  110
+#define CARD_TGT_H  156
+#define CARD_DUMP_H 120
 
 typedef struct {
     HWND hwnd;
     HWND edit_path, btn_browse, btn_start, btn_cancel, btn_details, btn_sim;
+    HWND btn_fdl1, btn_fdl2, btn_fdlclr;
     HWND list_log;
     ui_theme theme;
 
@@ -120,6 +128,168 @@ static unsigned long long free_space_bytes(const wchar_t *dir)
     if (wcslen(root) >= 3) { root[3] = L'\0';
         if (GetDiskFreeSpaceExW(root, &freeb, NULL, NULL)) return freeb.QuadPart; }
     return 0;
+}
+
+/* ---- modal hex-address prompt -------------------------------------------- */
+/* A tiny self-contained modal window: label + edit + OK/Cancel. Used to ask
+ * for an FDL load address when the user picks an FDL in the GUI. */
+typedef struct {
+    wchar_t text[64];
+    int     ok;
+    int     done;
+    HWND    edit;
+} prompt_ctx;
+
+static LRESULT CALLBACK prompt_proc(HWND h, UINT m, WPARAM wp, LPARAM lp)
+{
+    prompt_ctx *pc = (prompt_ctx *)GetWindowLongPtrW(h, GWLP_USERDATA);
+    switch (m) {
+    case WM_COMMAND:
+        if (!pc) break;
+        if (LOWORD(wp) == IDOK) {
+            GetWindowTextW(pc->edit, pc->text, 63);
+            pc->ok = 1; pc->done = 1; DestroyWindow(h);
+            return 0;
+        }
+        if (LOWORD(wp) == IDCANCEL) {
+            pc->ok = 0; pc->done = 1; DestroyWindow(h);
+            return 0;
+        }
+        break;
+    case WM_CLOSE:
+        if (pc) { pc->ok = 0; pc->done = 1; }
+        DestroyWindow(h);
+        return 0;
+    }
+    return DefWindowProcW(h, m, wp, lp);
+}
+
+static int ui_input_hex(HWND owner, HINSTANCE hInst, const wchar_t *title,
+                        uint32_t prefill, uint32_t *out)
+{
+    static int registered = 0;
+    prompt_ctx pc;
+    HWND h, lbl, ok, cancel;
+    RECT orc; int px, py, pw = 380, ph = 170;
+    wchar_t pre[32];
+    MSG msg;
+
+    if (!registered) {
+        WNDCLASSW wc; memset(&wc, 0, sizeof(wc));
+        wc.lpfnWndProc = prompt_proc;
+        wc.hInstance = hInst;
+        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        wc.lpszClassName = L"UDTPrompt";
+        RegisterClassW(&wc);
+        registered = 1;
+    }
+
+    memset(&pc, 0, sizeof(pc));
+
+    GetWindowRect(owner, &orc);
+    px = orc.left + ((orc.right - orc.left) - pw) / 2;
+    py = orc.top + ((orc.bottom - orc.top) - ph) / 2;
+
+    h = CreateWindowExW(WS_EX_DLGMODALFRAME, L"UDTPrompt", title,
+        WS_POPUP | WS_CAPTION | WS_SYSMENU, px, py, pw, ph,
+        owner, NULL, hInst, NULL);
+    if (!h) return 0;
+    SetWindowLongPtrW(h, GWLP_USERDATA, (LONG_PTR)&pc);
+
+    lbl = CreateWindowW(L"STATIC",
+        L"כתובת טעינה (Load address), הקסדצימלי - למשל 0x5000:",
+        WS_CHILD | WS_VISIBLE, 16, 14, pw - 40, 20, h, NULL, hInst, NULL);
+    _snwprintf_s(pre, 32, _TRUNCATE, L"0x%08X", prefill);
+    pc.edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", pre,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+        16, 42, pw - 40, 26, h, (HMENU)IDC_PROMPT_EDIT, hInst, NULL);
+    ok = CreateWindowW(L"BUTTON", L"אישור",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+        pw - 220, 84, 90, 30, h, (HMENU)IDOK, hInst, NULL);
+    cancel = CreateWindowW(L"BUTTON", L"ביטול",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+        pw - 120, 84, 90, 30, h, (HMENU)IDCANCEL, hInst, NULL);
+    {
+        HFONT f = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+        SendMessageW(lbl, WM_SETFONT, (WPARAM)f, TRUE);
+        SendMessageW(pc.edit, WM_SETFONT, (WPARAM)f, TRUE);
+        SendMessageW(ok, WM_SETFONT, (WPARAM)f, TRUE);
+        SendMessageW(cancel, WM_SETFONT, (WPARAM)f, TRUE);
+    }
+
+    ShowWindow(h, SW_SHOW);
+    SetFocus(pc.edit);
+    SendMessageW(pc.edit, EM_SETSEL, 0, -1);
+    EnableWindow(owner, FALSE);
+
+    while (!pc.done && GetMessageW(&msg, NULL, 0, 0) > 0) {
+        if (!IsDialogMessageW(h, &msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+
+    EnableWindow(owner, TRUE);
+    SetForegroundWindow(owner);
+
+    if (pc.ok) {
+        /* Accept "0x..." or bare hex. */
+        uint32_t v = (uint32_t)wcstoul(pc.text, NULL,
+                        (wcschr(pc.text, L'x') || wcschr(pc.text, L'X')) ? 0 : 16);
+        if (out) *out = v;
+        return 1;
+    }
+    return 0;
+}
+
+/* Pick an FDL image file and its load address; store into dst/addr (ANSI path
+ * so the C file API can open it). Returns 1 if a file was chosen. */
+static int choose_fdl(app_state *a, HINSTANCE hInst, int which)
+{
+    OPENFILENAMEW ofn;
+    wchar_t file[MAX_PATH] = L"";
+    char *dst;
+    uint32_t *addr;
+    const wchar_t *title;
+
+    if (which == 1) { dst = a->cfg.fdl1; addr = &a->cfg.fdl1_addr; title = L"בחר קובץ FDL1"; }
+    else            { dst = a->cfg.fdl2; addr = &a->cfg.fdl2_addr; title = L"בחר קובץ FDL2"; }
+
+    memset(&ofn, 0, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = a->hwnd;
+    ofn.lpstrFilter = L"FDL images (*.bin;*.img)\0*.bin;*.img\0All files (*.*)\0*.*\0";
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = MAX_PATH;
+    ofn.lpstrTitle = title;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER;
+
+    if (!GetOpenFileNameW(&ofn)) return 0;
+
+    /* Ask for the load address (prefill with the current/known value). */
+    {
+        uint32_t v = *addr;
+        if (ui_input_hex(a->hwnd, hInst, title, v, &v)) {
+            *addr = v;
+        }
+    }
+
+    /* Store as ANSI for fopen(); typical FDL paths are ASCII. */
+    WideCharToMultiByte(CP_ACP, 0, file, -1, dst, 512, NULL, NULL);
+    LOGI("FDL%d selected: %ls  (load addr 0x%08X)", which, file, *addr);
+    if (*addr == 0) {
+        LOGW("FDL%d load address is 0. If staging fails, set the correct "
+             "address (from the device PAC).", which);
+    }
+    return 1;
+}
+
+static void clear_fdl(app_state *a)
+{
+    a->cfg.fdl1[0] = '\0'; a->cfg.fdl1_addr = 0;
+    a->cfg.fdl2[0] = '\0'; a->cfg.fdl2_addr = 0;
+    LOGI("FDL selection cleared. Back to FDL-free Boot ROM read.");
 }
 
 /* ---- confirmation dialog ---- */
@@ -378,11 +548,11 @@ static void on_paint(app_state *a)
                 a->dev_present ? L"מחובר" : L"ממתין לחיבור");
     }
 
-    int x = PAD, y = 56 + PAD;
+    int x = PAD, y = TOP_H + PAD;
     int cardw = cr.right - 2 * PAD;
 
     /* Device card */
-    RECT dcard = { x, y, x + cardw, y + 110 };
+    RECT dcard = { x, y, x + cardw, y + CARD_DEV_H };
     paint_card(mem, a, dcard, L"מכשיר");
     {
         const chip_profile *chip = a->dev.chip;
@@ -405,20 +575,36 @@ static void on_paint(app_state *a)
     }
     y = dcard.bottom + PAD;
 
-    /* Target card (controls positioned in WM_SIZE/create; here draw labels) */
-    RECT tcard = { x, y, x + cardw, y + 110 };
+    /* Target card (controls positioned in layout_children; here draw labels) */
+    RECT tcard = { x, y, x + cardw, y + CARD_TGT_H };
     paint_card(mem, a, tcard, L"יעד");
     {
         unsigned long long fb = free_space_bytes(a->out_dir);
-        wchar_t line[128];
-        _snwprintf_s(line, 128, _TRUNCATE, L"נפח פנוי בדיסק: %.1f GB",
+        wchar_t line[320];
+        /* FDL status next to the FDL buttons. */
+        const char *f1 = a->cfg.fdl1[0] ? strrchr(a->cfg.fdl1, '\\') : NULL;
+        const char *f2 = a->cfg.fdl2[0] ? strrchr(a->cfg.fdl2, '\\') : NULL;
+        f1 = a->cfg.fdl1[0] ? (f1 ? f1 + 1 : a->cfg.fdl1) : NULL;
+        f2 = a->cfg.fdl2[0] ? (f2 ? f2 + 1 : a->cfg.fdl2) : NULL;
+        if (f1 || f2) {
+            _snwprintf_s(line, 320, _TRUNCATE, L"FDL: %hs%s%hs",
+                         f1 ? f1 : "(—)",
+                         f2 ? L"  +  " : L"",
+                         f2 ? f2 : "");
+            text_at(mem, a->theme.small, CLR_TEXT, tcard.left + 320, tcard.top + 96, line);
+        } else {
+            text_at(mem, a->theme.small, CLR_TEXT_MUT, tcard.left + 320, tcard.top + 96,
+                    L"FDL: ללא (קריאה ישירה מה-Boot ROM)");
+        }
+
+        _snwprintf_s(line, 320, _TRUNCATE, L"נפח פנוי בדיסק: %.1f GB",
                      (double)fb / (1024.0 * 1024.0 * 1024.0));
-        text_at(mem, a->theme.small, CLR_TEXT_MUT, tcard.left + 18, tcard.bottom - 30, line);
+        text_at(mem, a->theme.small, CLR_TEXT_MUT, tcard.left + 18, tcard.bottom - 26, line);
     }
     y = tcard.bottom + PAD;
 
     /* Dump card */
-    RECT pcard = { x, y, x + cardw, y + 120 };
+    RECT pcard = { x, y, x + cardw, y + CARD_DUMP_H };
     paint_card(mem, a, pcard, L"שאיבה");
     {
         RECT bar = { pcard.left + 18, pcard.top + 52, pcard.right - 18, pcard.top + 70 };
@@ -459,13 +645,18 @@ static void layout_children(app_state *a)
     int x = PAD;
     int cardw = cr.right - 2 * PAD;
 
-    int y_target = 56 + PAD + 110 + PAD;      /* top + device card */
-    int y_dump   = y_target + 110 + PAD;
-    int y_log    = y_dump + 120 + PAD;
+    int y_target = TOP_H + PAD + CARD_DEV_H + PAD;      /* top + device card */
+    int y_dump   = y_target + CARD_TGT_H + PAD;
+    int y_log    = y_dump + CARD_DUMP_H + PAD;
 
     /* Target card controls */
     MoveWindow(a->edit_path, x + 18, y_target + 44, cardw - 160, 28, TRUE);
     MoveWindow(a->btn_browse, x + cardw - 130, y_target + 42, 112, 32, TRUE);
+
+    /* Target card: FDL row (optional) */
+    MoveWindow(a->btn_fdl1,   x + 18,       y_target + 88, 96,  30, TRUE);
+    MoveWindow(a->btn_fdl2,   x + 18 + 104, y_target + 88, 96,  30, TRUE);
+    MoveWindow(a->btn_fdlclr, x + 18 + 208, y_target + 88, 96,  30, TRUE);
 
     /* Dump card buttons (right aligned in header area) */
     MoveWindow(a->btn_start,  x + cardw - 150, y_dump + 12, 132, 36, TRUE);
@@ -502,6 +693,15 @@ static void create_children(app_state *a, HINSTANCE hInst)
     a->btn_details = CreateWindowW(L"BUTTON", L"פרטים טכניים",
         WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
         0, 0, 10, 10, a->hwnd, (HMENU)IDC_BTN_DETAILS, hInst, NULL);
+    a->btn_fdl1 = CreateWindowW(L"BUTTON", L"FDL1…",
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        0, 0, 10, 10, a->hwnd, (HMENU)IDC_BTN_FDL1, hInst, NULL);
+    a->btn_fdl2 = CreateWindowW(L"BUTTON", L"FDL2…",
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        0, 0, 10, 10, a->hwnd, (HMENU)IDC_BTN_FDL2, hInst, NULL);
+    a->btn_fdlclr = CreateWindowW(L"BUTTON", L"נקה FDL",
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        0, 0, 10, 10, a->hwnd, (HMENU)IDC_BTN_FDLCLR, hInst, NULL);
 
     a->list_log = CreateWindowExW(0, L"LISTBOX", L"",
         WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOINTEGRALHEIGHT |
@@ -600,6 +800,9 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM wp, LPARAM lp)
             case IDC_BTN_BROWSE: label = L"עיון…"; break;
             case IDC_BTN_SIM:    label = L"שאיבת סימולציה"; break;
             case IDC_BTN_DETAILS:label = L"פרטים טכניים"; break;
+            case IDC_BTN_FDL1:   label = L"FDL1…"; break;
+            case IDC_BTN_FDL2:   label = L"FDL2…"; break;
+            case IDC_BTN_FDLCLR: label = L"נקה FDL"; break;
             }
             ui_draw_button(dis, &a->theme, label, primary, enabled);
             return TRUE;
@@ -632,6 +835,17 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM wp, LPARAM lp)
         case IDC_BTN_BROWSE:  browse_folder(a); InvalidateRect(h, NULL, FALSE); break;
         case IDC_BTN_START:   start_dump(a, 0); break;
         case IDC_BTN_SIM:     start_dump(a, 1); break;
+        case IDC_BTN_FDL1:
+            if (!a->running) { choose_fdl(a, (HINSTANCE)GetWindowLongPtrW(h, GWLP_HINSTANCE), 1);
+                               InvalidateRect(h, NULL, FALSE); }
+            break;
+        case IDC_BTN_FDL2:
+            if (!a->running) { choose_fdl(a, (HINSTANCE)GetWindowLongPtrW(h, GWLP_HINSTANCE), 2);
+                               InvalidateRect(h, NULL, FALSE); }
+            break;
+        case IDC_BTN_FDLCLR:
+            if (!a->running) { clear_fdl(a); InvalidateRect(h, NULL, FALSE); }
+            break;
         case IDC_BTN_CANCEL:
             if (a->running) { a->cancel = 1; LOGW("Cancellation requested…"); }
             break;

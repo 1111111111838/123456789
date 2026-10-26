@@ -75,7 +75,7 @@ if(WIN32)
     )
     target_include_directories(UnisocDumpTool PRIVATE src/ui)
     target_link_libraries(UnisocDumpTool PRIVATE
-        comctl32 setupapi shell32 ole32 uuid
+        comctl32 setupapi shell32 ole32 uuid comdlg32
     )
     # Place the sample INI next to the built exe for convenience.
     add_custom_command(TARGET UnisocDumpTool POST_BUILD

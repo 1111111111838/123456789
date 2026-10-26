@@ -22,7 +22,10 @@ Defined once in `src/ui/ui_theme.h`.
 * **Top bar** — product name, connection indicator (green dot + text).
 * **Device card** — chip name/family, interface, dump capability (with a
   "(inferred)" tag when the SoC is only guessed), green dot when ready.
-* **Target card** — path field, Browse button, free disk space.
+* **Target card** — path field, Browse button, free disk space, and an
+  optional FDL row: *FDL1…* / *FDL2…* file pickers (each prompts for a hex load
+  address) and a *Clear FDL* button. With no FDL chosen the tool reads directly
+  via the Boot ROM; choosing an FDL switches to the staged read path.
 * **Dump card** — primary *Start Dump* (blue), secondary *Cancel*, a cyan
   progress bar, and a line with percent / MB read / speed; a *Simulated Dump*
   button for the test path.
