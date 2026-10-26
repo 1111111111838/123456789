@@ -144,8 +144,8 @@ static int show_confirm_dialog(app_state *a)
         L"מצב חיבור: מחובר\n"
         L"יכולת שאיבה: %hs\n\n"
         L"להתחיל שאיבת Dump?\n\n"
-        L"(שים לב: שאיבה אמיתית דורשת פרמטרים תקינים ב-UnisocDumpTool.ini, "
-        L"ולרוב קובצי FDL מתאימים לשבב.)",
+        L"(ברירת מחדל: קריאה ישירה דרך ה-Boot ROM, ללא צורך ב-FDL. "
+        L"אם השבב אינו מאפשר קריאה ישירה, ניתן להגדיר FDL ב-UnisocDumpTool.ini.)",
         chip ? chip->name : "Unknown",
         chip ? chip->family : "",
         a->dev.chip_confirmed ? L"" : L" (משוער)",
@@ -255,20 +255,40 @@ static DWORD WINAPI worker_main(LPVOID param)
         p.total_size = 8 * 1024 * 1024;
         p.chunk_size = 2048;
     } else {
+        /* FDL-free by default: use the legacy linear Boot ROM read path, which
+         * needs no FDL. FDL staging happens ONLY if the user explicitly points
+         * the INI at FDL files. */
         p.method = (read_method)a->cfg.method;
         p.base_addr = a->cfg.base_addr;
-        p.total_size = a->cfg.flash_size;        /* 0 -> engine refuses, honestly */
+        p.total_size = a->cfg.flash_size;
         p.chunk_size = a->cfg.chunk;
         p.baud = a->cfg.baud;
         p.fdl1_path = a->cfg.fdl1[0] ? a->cfg.fdl1 : NULL;
         p.fdl1_addr = a->cfg.fdl1_addr;
         p.fdl2_path = a->cfg.fdl2[0] ? a->cfg.fdl2 : NULL;
         p.fdl2_addr = a->cfg.fdl2_addr;
-        if (!a->cfg.have_size) {
-            LOGE("Real dump needs 'size' in UnisocDumpTool.ini (the flash size "
-                 "from the device PAC). Without it the dump has no defined "
-                 "extent. See docs/MISSING.md.");
+
+        /* No FDL configured -> force the direct Boot ROM linear read. */
+        if (!p.fdl1_path && !p.fdl2_path) {
+            p.method = READ_LINEAR;
+            LOGI("FDL-free mode: reading directly via the Boot ROM "
+                 "(BSL_CMD_READ_FLASH). No FDL is used.");
         }
+
+        /* Read extent: if the INI did not specify a size, fall back to a
+         * default feature-phone flash size so a dump can start without any
+         * configuration. This is a DEFAULT, clearly logged - not a probed
+         * value. Set 'size' in the INI for an exact extent. */
+        if (!a->cfg.have_size || p.total_size == 0) {
+            p.total_size = 8ull * 1024 * 1024;   /* 8 MiB default */
+            LOGW("No 'size' configured; using default read extent of 8 MiB. "
+                 "Set 'size' in UnisocDumpTool.ini for an exact amount.");
+        }
+        if (p.chunk_size == 0) p.chunk_size = 1024;
+
+        LOGI("Note: a successful FDL-free read depends on the chip's Boot ROM "
+             "honouring direct reads. If the device rejects them, supply an "
+             "FDL in the INI (see docs/MISSING.md).");
     }
 
     st = flash_dump_run(t, w, &p, worker_progress, a, &complete);
@@ -513,8 +533,9 @@ static LRESULT CALLBACK wndproc(HWND h, UINT m, WPARAM wp, LPARAM lp)
 
         log_set_sink(ui_log_sink, a);
         LOGI("Unisoc Dump Tool started. Connect a device in download mode.");
-        LOGI("Real reads need valid UnisocDumpTool.ini parameters (and usually "
-             "an FDL). Use 'Simulated Dump' to exercise the full pipeline.");
+        LOGI("FDL-free by default: a real dump reads directly via the Boot ROM, "
+             "no FDL required. Optionally set a size/FDL in UnisocDumpTool.ini.");
+        LOGI("Use 'Simulated Dump' to exercise the full pipeline without hardware.");
 
         layout_children(a);
         SetTimer(h, 1, 800, NULL);   /* device detection poll */
