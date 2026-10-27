@@ -1,4 +1,7 @@
 # Firmware working files / large binaries (not source)
 *.PAC
 *.pac
+*.bin
 *-sign.bin
+# Signing keys (never commit)
+*.pem
