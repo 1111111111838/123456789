@@ -1,0 +1,4 @@
+# Firmware working files / large binaries (not source)
+*.PAC
+*.pac
+*-sign.bin
